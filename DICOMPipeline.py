@@ -251,7 +251,8 @@ class DICOMPipeline:
 
 
 if __name__ == "__main__":
-    processor = RawDataProcessor(ct_resize=False)
-    processor.process_all_patients("./raw_data/")
+    pipeline = DICOMPipeline(ct_resize=False)
+    pipeline.process_all_patients("./raw_data/")
+    
 
 #Not working for Bronzite, Cornaline, Epidote, Fluorine, Galene, Idocrase
