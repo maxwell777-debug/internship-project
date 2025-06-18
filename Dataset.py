@@ -1,76 +1,38 @@
-import os
 import torch
 from torch.utils.data import Dataset
-import nibabel as nib
 import numpy as np
+import nibabel as nib
 from pathlib import Path
-import random as rd
 
-from DICOMToNiftiConverter import DICOMToNiftiConverter
+class PetGanDataset(Dataset):
 
-
-class PatientDataset(Dataset):
-    def __init__(self, data_dir, size=None, transform=None):
-        """
-        root_dir: dossier racine contenant tous les dossiers PatientXX
-        patient_ids: liste des IDs patient (ex: ["Patient0", "Patient1", ...])
-        transform: transformations PyTorch/MONAI à appliquer
-        """
-        self.root_dir = Path(data_dir)
-        self.size = size
+    def __init__(self, root_dir, transform=None, use_ct=False):
+        self.root_dir = Path(root_dir)
+        self.patients = sorted([p for p in self.root_dir.iterdir() if p.is_dir()])
         self.transform = transform
-
-
+        self.use_ct = use_ct
 
     def __len__(self):
-        return self.size
-    
-    def load(self):
-        nb_patients = len([d for d in self.root_dir.iterdir() if d.is_dir() and d.name.startswith("Patient")])
-        patient_ids = [f"Patient{i}" for i in range(nb_patients)]
-        if self.size:
-            patient_ids = rd.sample(patient_ids, self.size)
-
-        converter = DICOMToNiftiConverter()
-        for patient_id in patient_ids:
-            converter.extract(
-                input_dir=self.root_dir / patient_id / "dcm",
-                output_dir=self.root_dir / patient_id / "nii"
-            )
+        return len(self.patients)
 
     def __getitem__(self, idx):
-        patient_id = f"Patient{idx}"
-        patient_path = self.root_dir / patient_id / "nii"
- 
-        # Chargement des volumes
-        pet_suv_path = patient_path / "baseline_PET_SUV.nii.gz"
-        pet_post_path = patient_path / "followup_PET.nii.gz"
-        mask_dir = self.root_dir / patient_id / "segmentation_output"
+        patient_dir = self.patients[idx]
 
-        pet_suv = nib.load(pet_suv_path).get_fdata().astype(np.float32)
-        pet_post = nib.load(pet_post_path).get_fdata().astype(np.float32)
+        pet_pre = nib.load(patient_dir / "PET_pre.nii.gz").get_fdata()
+        pet_post = nib.load(patient_dir / "PET_post.nii.gz").get_fdata()
 
-        # Fusion des masques physiologiques
-        physio_mask = self._load_and_combine_masks(mask_dir, pet_suv.shape)
+        x = pet_pre.astype(np.float32)
+        y = pet_post.astype(np.float32)
 
-        # Optionnel : masquage direct (ex: pet_suv[physio_mask == 1] = 0)
-        # pet_suv *= (1 - physio_mask)
+        if self.use_ct:
+            ct = nib.load(patient_dir / "CT.nii.gz").get_fdata().astype(np.float32)
+            input_tensor = np.stack([x, ct], axis=0)
+        else:
+            input_tensor = x[None, :, :, :]
 
-        sample = {
-            "input": np.stack([pet_suv, physio_mask], axis=0),  # 2 canaux : SUV + masque
-            "target": pet_post[np.newaxis, ...]  # 1 canal
-        }
+        target_tensor = y[None, :, :, :]
 
         if self.transform:
-            sample = self.transform(sample)
+            input_tensor, target_tensor = self.transform(input_tensor, target_tensor)
 
-        return sample
-
-    def _load_and_combine_masks(self, mask_dir, shape):
-        """Fusionne les masques présents dans le dossier donné."""
-        combined = np.zeros(shape, dtype=np.uint8)
-        for mask_file in os.listdir(mask_dir):
-            if mask_file.endswith(".nii.gz"):
-                mask = nib.load(mask_dir / mask_file).get_fdata()
-                combined |= (mask > 0).astype(np.uint8)
-        return combined
+        return torch.tensor(input_tensor), torch.tensor(target_tensor)

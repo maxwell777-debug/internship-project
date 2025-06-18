@@ -60,12 +60,3 @@ class CTSegmentator:
             self.logger.error(f"Segmentation failed: {e}")
             if e.stderr:
                 self.logger.debug(f"Error: {e.stderr}")
-
-
-# Exemple d'utilisation
-seg = CTSegmentator(
-    image_path="Patient0/nii/baseline_CTa.nii.gz",
-    output_dir="Patient0/segmentation_output",
-    fast=True
-)
-seg.run()
