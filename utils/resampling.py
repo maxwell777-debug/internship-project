@@ -2,7 +2,7 @@ from pathlib import Path
 import SimpleITK as sitk
 from loguru import logger
 import nibabel as nib
-from nib_sitk_converter import sitk_to_nib, nib_to_sitk
+from image_conversion import sitk_to_nib, nib_to_sitk
 
 
 def change_spacing(image: nib.Nifti1Image, new_spacing: float = 1.0, interpolator: str = "linear", default_pixel_value: float = 0.0) -> nib.Nifti1Image:
