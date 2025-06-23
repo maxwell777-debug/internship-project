@@ -32,9 +32,9 @@ def convert_dicom_dirs(base_dir: Path, output_dir: Path):
     for subdir in base_dir.iterdir():
         if subdir.is_dir() and any(subdir.glob("*.dcm")):
             modality, context = subdir.name.split("_")
-            output_subdir = output_dir / context
+            output_subdir = output_dir
             output_subdir.mkdir(parents=True, exist_ok=True)
-            output_path = output_subdir / f"{modality}.nii.gz"
+            output_path = output_subdir / f"{modality}_{context}.nii.gz"
             try:
                 dcm_to_nifti(subdir, output_path)
                 logger.info(f"Converted DICOMs in {subdir.name} to NIfTI format.")
@@ -88,35 +88,57 @@ def extract_patient_metadata(raw_data_dir: Path, output_dir: Path):
     logger.info(f"Saved patient_info.json to: {output_json}.")
 
 
-def process_all_patients(dicom_root_dir: Path, processed_root_dir: Path = None):
+def process_all_patients(dicom_root_dir: Path, processed_root_dir: Path = None, already_organized: bool = False) -> None:
     total_start_time = time.time()
     logger.info("Starting batch processing of all patients...")
-    patient_count = 0
-    
-    if processed_root_dir is None :
+
+    if processed_root_dir is None:
         processed_root_dir = dicom_root_dir.parent / "processed"
-        
     processed_root_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    processed_count = 0
+    skipped_count = 0
+
     for patient_dicom_dir in dicom_root_dir.iterdir():
-        if patient_dicom_dir.is_dir() and any(patient_dicom_dir.glob("*.dcm")):
-            patient_start_time = time.time() 
-            logger.info(f"Processing patient: {patient_dicom_dir.name}")
-            
-            patient_processed_dir = processed_root_dir / patient_dicom_dir.name
-            patient_processed_dir.mkdir(parents=True, exist_ok=True)
+        if not patient_dicom_dir.is_dir():
+            continue
+
+        if not any(patient_dicom_dir.rglob("*.dcm")):
+            logger.warning(f"No DICOM files found in {patient_dicom_dir.name}. Skipping this patient.")
+            continue
+
+        patient_processed_dir = processed_root_dir / patient_dicom_dir.name
+        required_files = [
+            "PET_baseline.nii.gz", "PET_normal.nii.gz",
+            "CT_baseline.nii.gz", "CT_normal.nii.gz",
+            "patient_info.json"
+        ]
+
+        if all((patient_processed_dir / f).exists() for f in required_files):
+            logger.info(f"Patient {patient_dicom_dir.name} already processed. Skipping.")
+            skipped_count += 1
+            continue
+
+        logger.info(f"Processing patient: {patient_dicom_dir.name}")
+        start_time = time.time()
+
+        if not already_organized:
             organize_dicom(patient_dicom_dir)
-            convert_dicom_dirs(patient_dicom_dir, patient_processed_dir)
-            extract_patient_metadata(patient_dicom_dir, patient_processed_dir)
-            
-            patient_elapsed = time.time() - patient_start_time
-            logger.info(f"Completed processing patient {patient_dicom_dir.name} in {patient_elapsed:.2f}s")
-            patient_count += 1
-    
+
+        patient_processed_dir.mkdir(parents=True, exist_ok=True)
+        convert_dicom_dirs(patient_dicom_dir, patient_processed_dir)
+        extract_patient_metadata(patient_dicom_dir, patient_processed_dir)
+
+        elapsed = time.time() - start_time
+        logger.info(f"Finished processing {patient_dicom_dir.name} in {elapsed:.2f}s")
+        processed_count += 1
+
     total_elapsed = time.time() - total_start_time
-    logger.info(f"Completed processing of {patient_count} patients in {total_elapsed:.2f}s\n")
+    logger.info(f"Processing complete: {processed_count} patients processed, {skipped_count} skipped. Total time: {total_elapsed:.2f}s\n")
 
 
-# ==== Example usage ====
+
+# ========
 dicom_root_dir = Path("data/raw")
-process_all_patients(dicom_root_dir)
+process_all_patients(dicom_root_dir, already_organized=True)
+
