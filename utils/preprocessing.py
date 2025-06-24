@@ -1,6 +1,7 @@
 from pathlib import Path
 import re
 import nibabel as nib
+from tqdm import tqdm
 from loguru import logger
 
 from resampling import change_spacing, resample_like
@@ -75,21 +76,21 @@ def preprocess_all_patients(root_processed_dir: Path, output_dir: Path = None):
         "CT_baseline_preprocessed.nii.gz"
     }
 
-    for patient_dir in root_processed_dir.iterdir():
-        if not patient_dir.is_dir():
-            continue
+    # Liste les dossiers patients à traiter
+    patient_dirs = [p for p in root_processed_dir.iterdir() if p.is_dir()]
 
+    for patient_dir in tqdm(patient_dirs, desc="Prétraitement des patients"):
         patient_processed_dir = output_dir / patient_dir.name
         patient_processed_dir.mkdir(parents=True, exist_ok=True)
 
         if required_files.issubset({f.name for f in patient_processed_dir.glob("*.nii.gz")}):
-            logger.info(f"Preprocessing already completed for patient: {patient_dir.name}. Skipping.")
             continue
 
         logger.info(f"Preprocessing patient: {patient_dir.name}")
         preprocess_patient_from_dir(patient_dir, patient_processed_dir)
 
     logger.info("Full preprocessing completed for all patients.")
+
 
 
 def reset_nifti_scaling(nifti_img):
